@@ -1,0 +1,8 @@
+Link do vídeo no YouTube (pitch AEGIS GS 2026):
+
+[SUBSTITUIR PELO LINK DO YOUTUBE APÓS GRAVAR]
+
+Requisitos:
+- Vídeo configurado como PÚBLICO no YouTube
+- Duração máxima: 5 minutos
+- Este arquivo deve ser entregue junto com o PDF ao professor de BI, Analytics & Data Visualization

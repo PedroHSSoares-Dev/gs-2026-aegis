@@ -1,0 +1,5 @@
+AEGIS — Orbital Disaster Intelligence é uma plataforma que transforma dados de satélites
+da NASA (EONET) e Copernicus em alertas preemptivos de desastres climáticos em tempo real.
+Combinando análise exploratória de dados orbitais com modelos preditivos de Machine Learning
+(LSTM e XGBoost), o sistema monitora globalmente incêndios, ciclones, enchentes e terremotos,
+antecipando crises com até 72 horas de antecedência para agências de defesa civil e organizações humanitárias.

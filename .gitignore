@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# PDFs externos (material FIAP — não commitar)
+docs/Apresentação*.pdf
+docs/GlobalSolution*.pdf
+docs/GS_2026.1*.pdf
+docs/GS_2026_2TSC_template.pptx
