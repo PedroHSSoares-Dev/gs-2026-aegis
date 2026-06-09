@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import type { DisasterEvent } from '../../types';
 import { severityColor } from '../../utils/colors';
 import { kindIconComponent } from '../icons';
@@ -6,18 +6,22 @@ import SeverityBadge from './SeverityBadge';
 import Sparkline from './Sparkline';
 
 interface EventCardProps {
-  ev: DisasterEvent;
-  selected: boolean;
-  expanded: boolean;
-  onSelect: (id: string) => void;
-  onExpand: (id: string | null) => void;
+  ev:                 DisasterEvent;
+  selected:           boolean;
+  expanded:           boolean;
+  onSelect:           (id: string) => void;
+  onExpand:           (id: string | null) => void;
+  interpolatedRisks?: Map<string, number>;
 }
 
-export default function EventCard({ ev, selected, expanded, onSelect, onExpand }: EventCardProps) {
+export default function EventCard({ ev, selected, expanded, onSelect, onExpand, interpolatedRisks }: EventCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const KindIcon = kindIconComponent(ev.kind);
   const color = severityColor(ev.severity);
   const deltaPositive = ev.delta.startsWith('+');
+  const liveRisk  = interpolatedRisks?.get(ev.id) ?? ev.risk;
+  const liveSpark = [...ev.spark.slice(0, -1), liveRisk];
 
   // Scroll into view when this card becomes selected
   useEffect(() => {
@@ -65,13 +69,13 @@ export default function EventCard({ ev, selected, expanded, onSelect, onExpand }
         <div className="ecard-score">
           <div className="ecard-score-lbl">RISK</div>
           <div className="ecard-score-val">
-            <span>{ev.risk}</span>
+            <span>{liveRisk}</span>
             <span className={`ecard-delta ${deltaPositive ? 'up' : 'down'}`}>{ev.delta}</span>
           </div>
         </div>
         <div className="ecard-spark">
           <div className="ecard-spark-lbl">7D INTENSITY</div>
-          <Sparkline data={ev.spark} color={color} />
+          <Sparkline data={liveSpark} color={color} />
         </div>
       </div>
       <div className="ecard-meta">
@@ -86,7 +90,7 @@ export default function EventCard({ ev, selected, expanded, onSelect, onExpand }
             <div className="ecard-detail-row">
               <span className="ecard-detail-lbl">COORDINATES</span>
               <span className="ecard-detail-val">
-                {ev.lat.toFixed(4)}°, {ev.lon.toFixed(4)}°
+                {Math.abs(ev.lat).toFixed(2)}°{ev.lat >= 0 ? 'N' : 'S'}, {Math.abs(ev.lon).toFixed(2)}°{ev.lon >= 0 ? 'E' : 'W'}
               </span>
             </div>
             <div className="ecard-detail-row">
@@ -101,12 +105,29 @@ export default function EventCard({ ev, selected, expanded, onSelect, onExpand }
               <span className="ecard-detail-lbl">EVENT ID</span>
               <span className="ecard-detail-val" style={{ color }}>{ev.id}</span>
             </div>
+            <div className="ecard-detail-row">
+              <span className="ecard-detail-lbl">RISK TREND</span>
+              <span className="ecard-detail-val" style={{ color }}>
+                {ev.spark[0].toFixed(0)} → {liveRisk}
+                {liveRisk > ev.spark[0] ? ' ↑ ESCALATING' : liveRisk < ev.spark[0] ? ' ↓ CONTAINING' : ' → STABLE'}
+              </span>
+            </div>
           </div>
           <div className="ecard-detail-actions">
-            <button className="ecard-act">DISPATCH</button>
-            <button className="ecard-act">MONITOR</button>
-            <button className="ecard-act ecard-act-dim">ARCHIVE</button>
+            <button
+              className="ecard-act"
+              onClick={(e) => { e.stopPropagation(); setActionFeedback('DISPATCHING...'); setTimeout(() => setActionFeedback(null), 4000); }}
+            >DISPATCH</button>
+            <button
+              className="ecard-act"
+              onClick={(e) => { e.stopPropagation(); setActionFeedback('MONITORING...'); setTimeout(() => setActionFeedback(null), 4000); }}
+            >MONITOR</button>
+            <button
+              className="ecard-act ecard-act-dim"
+              onClick={(e) => { e.stopPropagation(); setActionFeedback('ARCHIVING...'); setTimeout(() => setActionFeedback(null), 4000); }}
+            >ARCHIVE</button>
           </div>
+          {actionFeedback && <div className="ecard-feedback">{actionFeedback}</div>}
         </div>
       )}
     </div>

@@ -7,13 +7,17 @@ import type { Topology } from 'topojson-specification';
 import type { DisasterEvent, EventKind, Severity } from '../../types';
 import { severityColor, severityGlow } from '../../utils/colors';
 import { useResize } from '../../hooks/useResize';
+import { interpolatePath, bearing, pathProgress } from '../../lib/geoUtils';
+import { scoreToSeverity } from '../../lib/riskUtils';
+import { MAP_ICON_SIZE, MAP_ICON_VIEWBOX, MAP_ZOOM_TARGET, MAP_ZOOM_DURATION, MAP_ZOOM_OUT_DURATION, MAP_PADDING } from '../../constants';
 
 interface WorldMapProps {
-  events:   DisasterEvent[];
-  selected: string;
-  onSelect: (id: string) => void;
-  scrub:    number;
-  daysBack: number;
+  events:             DisasterEvent[];
+  selected:           string;
+  onSelect:           (id: string) => void;
+  scrub:              number;
+  daysBack:           number;
+  interpolatedRisks?: Map<string, number>;
 }
 
 // SVG path data for each kind — 24×24 viewBox
@@ -25,34 +29,11 @@ const KIND_PATHS: Record<EventKind, string> = {
   drought:  'M12 3a4 4 0 100 8 4 4 0 000-8zM12 1v2M12 13v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42M5 20h14',
 };
 
-const ICON_SIZE = 14;   // rendered size in SVG units
+const ICON_SIZE = MAP_ICON_SIZE;
 const ICON_HALF = ICON_SIZE / 2;
-const VIEWBOX   = 24;   // source viewBox
+const VIEWBOX   = MAP_ICON_VIEWBOX;
 
-// Interpolate [lon,lat] along path at t (0=start, 1=end)
-function interpolatePath(path: [number,number][], t: number): [number,number] {
-  if (path.length < 2) return path[0] ?? [0,0];
-  const total = path.length - 1;
-  const s = Math.max(0, Math.min(1, t)) * total;
-  const i = Math.min(Math.floor(s), total - 1);
-  const f = s - i;
-  return [path[i][0] + (path[i+1][0] - path[i][0]) * f,
-          path[i][1] + (path[i+1][1] - path[i][1]) * f];
-}
-
-// Angle (degrees) from screen pt0 → pt1
-function bearing(p0: [number,number], p1: [number,number]): number {
-  return Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) * (180 / Math.PI);
-}
-
-// progress 0→1 along storm path based on daysBack
-function pathProgress(ev: DisasterEvent, daysBack: number): number {
-  if (!ev.path || ev.path.length < 2) return 1;
-  const elapsed = daysBack - ev.detectedDaysAgo;
-  return Math.max(0, Math.min(1, elapsed / 7));
-}
-
-export default function WorldMap({ events, selected, onSelect, daysBack }: WorldMapProps) {
+export default function WorldMap({ events, selected, onSelect, daysBack, interpolatedRisks }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef       = useRef<SVGSVGElement>(null);
   const zoomRef      = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
@@ -101,7 +82,7 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
     // Empty string = zoom out to world view
     if (!selected) {
       d3.select(svgRef.current)
-        .transition().duration(600).ease(d3.easeCubicInOut)
+        .transition().duration(MAP_ZOOM_OUT_DURATION).ease(d3.easeCubicInOut)
         .call(zoomRef.current.transform, d3.zoomIdentity);
       return;
     }
@@ -109,26 +90,20 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
     const ev = events.find(e => e.id === selected);
     if (!ev) return;
 
-    // Use same scale formula as render
-    const scale = Math.min(w / (2 * Math.PI), h / Math.PI) * 0.92;
+    const scale = Math.min(w / (2 * Math.PI), h / Math.PI) * MAP_PADDING;
     const projection = d3.geoEquirectangular().scale(scale).translate([w / 2, h / 2]);
     const [sx, sy] = projection([ev.lon, ev.lat]) ?? [w / 2, h / 2];
 
-    const targetScale = 3.5;
-    const tx = w / 2 - targetScale * sx;
-    const ty = h / 2 - targetScale * sy;
-    const target = d3.zoomIdentity.translate(tx, ty).scale(targetScale);
+    const tx = w / 2 - MAP_ZOOM_TARGET * sx;
+    const ty = h / 2 - MAP_ZOOM_TARGET * sy;
+    const target = d3.zoomIdentity.translate(tx, ty).scale(MAP_ZOOM_TARGET);
 
     d3.select(svgRef.current)
-      .transition().duration(700).ease(d3.easeCubicInOut)
+      .transition().duration(MAP_ZOOM_DURATION).ease(d3.easeCubicInOut)
       .call(zoomRef.current.transform, target);
   }, [selected, events, w, h]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scale so the full world fits in both dimensions with a small margin.
-  // Equirectangular: world width = scale * 2π, world height = scale * π
-  // We want: scale * 2π ≤ w  AND  scale * π ≤ h
-  // So scale = min(w / (2π), h / π) * padding
-  const mapScale = Math.min(w / (2 * Math.PI), h / Math.PI) * 0.92;
+  const mapScale = Math.min(w / (2 * Math.PI), h / Math.PI) * MAP_PADDING;
   const proj    = d3.geoEquirectangular().scale(mapScale).translate([w/2, h/2]);
   const pathGen = d3.geoPath(proj);
   const px      = (ll: [number,number]): [number,number] => proj(ll) ?? [0,0];
@@ -170,10 +145,16 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
 
           {/* ── STORM TRACKS ──────────────────────────────────────────── */}
           {events.filter(e => e.path && e.path.length >= 2).map(ev => {
-            const visible  = ev.detectedDaysAgo <= daysBack;
-            const progress = pathProgress(ev, daysBack);
-            const color    = severityColor(ev.severity);
-            const { haloR, glowPx, opacity: glowOp } = severityGlow(ev.severity);
+            // Use firstDetectedDaysAgo (stable = 7) so visibility never flickers
+            // when the dedup switches between snapshots with different detectedDaysAgo.
+            const totalLife = ev.firstDetectedDaysAgo ?? ev.detectedDaysAgo;
+            const visible   = daysBack <= totalLife + 0.1;
+
+            const progress     = pathProgress(ev, daysBack);
+            const liveRisk     = interpolatedRisks?.get(ev.id) ?? ev.risk;
+            const liveSeverity = scoreToSeverity(liveRisk);
+            const color        = severityColor(liveSeverity);
+            const { haloR, glowPx, opacity: glowOp } = severityGlow(liveSeverity);
             const screenPts = ev.path!.map(pt => px(pt));
             const total     = screenPts.length - 1;
             const scaled    = Math.max(0, Math.min(1, progress)) * total;
@@ -182,26 +163,24 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
             const [curLon, curLat] = interpolatePath(ev.path!, progress);
             const [cx, cy]         = px([curLon, curLat]);
 
-            // Icon rotation — clamped so text never goes upside-down
             const p0  = screenPts[segIdx];
             const p1  = screenPts[Math.min(segIdx + 1, total)];
             const rot = bearing(p0, p1);
 
-            // Direction vector arrow — scale inversely with zoom so visual size stays constant
             const arrowLen = 22 / transform.k;
-            const rad = rot * (Math.PI / 180);
-            const ax  = cx + Math.cos(rad) * arrowLen;
-            const ay  = cy + Math.sin(rad) * arrowLen;
-            // Arrowhead perpendicular points
-            const headLen = 6 / transform.k;
-            const perpRad = rad + Math.PI;
+            const rad      = rot * (Math.PI / 180);
+            const ax       = cx + Math.cos(rad) * arrowLen;
+            const ay       = cy + Math.sin(rad) * arrowLen;
+            const headLen  = 6 / transform.k;
+            const perpRad  = rad + Math.PI;
             const hx1 = ax + Math.cos(perpRad + 0.4) * headLen;
             const hy1 = ay + Math.sin(perpRad + 0.4) * headLen;
             const hx2 = ax + Math.cos(perpRad - 0.4) * headLen;
             const hy2 = ay + Math.sin(perpRad - 0.4) * headLen;
 
-            const pastPts   = screenPts.slice(0, segIdx + 2);
-            const futurePts = screenPts.slice(segIdx + 1);
+            const pastPts        = screenPts.slice(0, segIdx + 2);
+            const futurePts      = screenPts.slice(segIdx + 1);
+            const showFuturePath = progress >= 0.99 || ev.detectedDaysAgo < 0;
             const toD = (pts: [number,number][]) =>
               pts.map((p,i) => `${i===0?'M':'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
 
@@ -209,29 +188,88 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
             const iconPath = KIND_PATHS[ev.kind];
             const isSel    = selected === ev.id;
 
+            // ── Forecast cone geometry (screen-space) ────────────────
+            const showCone = daysBack < -0.5 && ev.detectedDaysAgo === 0 && screenPts.length >= 2;
+            let coneD        = '';
+            let coneLineX2   = cx;
+            let coneLineY2   = cy;
+            const daysAhead  = Math.abs(daysBack);
+            const coneOpacity = Math.min(0.2, 0.04 + daysAhead * 0.025);
+
+            if (showCone) {
+              const lastPt = screenPts[screenPts.length - 1];
+              const prevPt = screenPts[screenPts.length - 2];
+              const sdx  = lastPt[0] - prevPt[0];
+              const sdy  = lastPt[1] - prevPt[1];
+              const slen = Math.sqrt(sdx * sdx + sdy * sdy) || 1;
+              const snx  = sdx / slen;
+              const sny  = sdy / slen;
+              const spx  = -sny;
+              const spy  =  snx;
+              const N        = 6;
+              const stepLen  = slen * 1.5;
+              const leftSegs: string[]  = [];
+              const rightPts: string[]  = [];
+              for (let i = 1; i <= N; i++) {
+                const fw = 4 + i * 5;
+                const fx = lastPt[0] + snx * stepLen * i;
+                const fy = lastPt[1] + sny * stepLen * i;
+                leftSegs.push(`L${(fx - spx * fw).toFixed(1)},${(fy - spy * fw).toFixed(1)}`);
+                rightPts.push(`${(fx + spx * fw).toFixed(1)},${(fy + spy * fw).toFixed(1)}`);
+              }
+              coneD = `M${lastPt[0].toFixed(1)},${lastPt[1].toFixed(1)} `
+                + leftSegs.join(' ')
+                + ' ' + rightPts.reverse().map((p,i) => `${i===0?'L':' '}${p}`).join('')
+                + ' Z';
+              coneLineX2 = lastPt[0] + snx * stepLen * N;
+              coneLineY2 = lastPt[1] + sny * stepLen * N;
+            }
+
             return (
-              <g key={`storm-${ev.id}`} style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.8s ease' }}>
-                {/* Tracks */}
+              <g key={`storm-${ev.id}`}
+                style={{ opacity: visible ? 1 : 0, transition: 'opacity 0.3s ease', pointerEvents: visible ? 'auto' : 'none' }}>
+
+                {/* Past track */}
                 {pastPts.length >= 2 && (
                   <path d={toD(pastPts)} fill="none" stroke={color}
                     strokeWidth="1.5" strokeOpacity="0.65" strokeLinecap="round"/>
                 )}
-                {futurePts.length >= 2 && (
+                {/* Future dashed line — only at NOW or for forecast events */}
+                {showFuturePath && futurePts.length >= 2 && (
                   <path d={toD(futurePts)} fill="none" stroke={color}
                     strokeWidth="1" strokeOpacity="0.3" strokeDasharray="4 3" strokeLinecap="round"/>
                 )}
-                {screenPts.map((p, i) => (
-                  <circle key={i} cx={p[0]} cy={p[1]} r={1.5}
-                    fill={i <= segIdx + 1 ? color : 'rgba(255,255,255,0.15)'}/>
+                {/* Progressive dots — only show points reached, older = dimmer */}
+                {screenPts.slice(0, segIdx + 2).map((p, i) => (
+                  <circle key={i} cx={p[0]} cy={p[1]} r={1.8}
+                    fill={color}
+                    opacity={0.3 + (i / Math.max(segIdx + 1, 1)) * 0.5}
+                  />
                 ))}
+
+                {/* Forecast cone of uncertainty */}
+                {showCone && (
+                  <>
+                    <path d={coneD}
+                      fill={color} fillOpacity={coneOpacity}
+                      stroke={color} strokeOpacity={0.3}
+                      strokeWidth={0.8} strokeDasharray="3 2"/>
+                    <line
+                      x1={screenPts[screenPts.length - 1][0]}
+                      y1={screenPts[screenPts.length - 1][1]}
+                      x2={coneLineX2} y2={coneLineY2}
+                      stroke={color} strokeWidth={0.8}
+                      strokeOpacity={0.35} strokeDasharray="4 3"/>
+                  </>
+                )}
 
                 {/* Halo */}
                 <circle cx={cx} cy={cy} r={haloR}
-                  fill={`url(#heat-${ev.severity})`}
-                  className={`heat-breathe sev-${ev.severity}`}
+                  fill={`url(#heat-${liveSeverity})`}
+                  className={`heat-breathe sev-${liveSeverity}`}
                   style={{ animationDelay: `${(ev.lon + 180) / 60}s`, opacity: glowOp }}/>
 
-                {/* Direction vector arrow — drawn in screen space, never flips */}
+                {/* Direction vector arrow */}
                 <line x1={cx} y1={cy} x2={ax} y2={ay}
                   stroke={color} strokeWidth="1.5" strokeOpacity="0.75" strokeLinecap="round"/>
                 <polygon
@@ -267,7 +305,7 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
                   </g>
                 </g>
 
-                {/* Label — only when selected, outside rotated group so it never flips */}
+                {/* Label — outside rotated group so it never flips */}
                 {isSel && (
                   <g transform={`translate(${cx + 14}, ${cy - 10})`}
                     style={{ pointerEvents: 'none' }}>
@@ -283,11 +321,15 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
 
           {/* ── STATIC EVENTS (no path) ──────────────────────────────── */}
           {events.filter(e => !e.path).map(ev => {
-            const [x, y]   = px([ev.lon, ev.lat]);
-            const isSel    = selected === ev.id;
-            const color    = severityColor(ev.severity);
-            const { haloR, glowPx, opacity: glowOp } = severityGlow(ev.severity);
-            const visible  = ev.detectedDaysAgo <= daysBack;
+            const [x, y]      = px([ev.lon, ev.lat]);
+            const isSel       = selected === ev.id;
+            const liveRisk    = interpolatedRisks?.get(ev.id) ?? ev.risk;
+            const liveSeverity = scoreToSeverity(liveRisk);
+            const color    = severityColor(liveSeverity);
+            const { haloR, glowPx, opacity: glowOp } = severityGlow(liveSeverity);
+            const visible  = daysBack >= 0
+              ? ev.detectedDaysAgo >= 0 && ev.detectedDaysAgo <= daysBack + 0.5
+              : ev.detectedDaysAgo <= 0 && ev.detectedDaysAgo >= daysBack - 0.5;
             const scale    = ICON_SIZE / VIEWBOX;
             const iconPath = KIND_PATHS[ev.kind];
 
@@ -295,10 +337,10 @@ export default function WorldMap({ events, selected, onSelect, daysBack }: World
               <g key={`ev-${ev.id}`}
                 style={{ opacity: visible ? 1 : 0, visibility: visible ? 'visible' : 'hidden', transition: 'opacity 0.8s ease' }}>
 
-                {/* Halo — fixed absolute size by severity */}
+                {/* Halo — size and color driven by interpolated risk */}
                 <circle cx={x} cy={y} r={haloR}
-                  fill={`url(#heat-${ev.severity})`}
-                  className={`heat-breathe sev-${ev.severity}`}
+                  fill={`url(#heat-${liveSeverity})`}
+                  className={`heat-breathe sev-${liveSeverity}`}
                   style={{ animationDelay: `${(ev.lon + 180) / 60}s`, opacity: glowOp }}/>
 
                 {/* Icon marker */}

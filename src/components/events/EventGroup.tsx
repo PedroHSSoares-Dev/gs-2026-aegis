@@ -4,15 +4,16 @@ import { severityColor } from '../../utils/colors';
 import EventCard from './EventCard';
 
 interface EventGroupProps {
-  severity: Severity;
-  events: DisasterEvent[];
-  selected: string;
-  expanded: string | null;
-  onSelect: (id: string) => void;
-  onExpand: (id: string | null) => void;
+  severity:           Severity;
+  events:             DisasterEvent[];
+  selected:           string;
+  expanded:           string | null;
+  onSelect:           (id: string) => void;
+  onExpand:           (id: string | null) => void;
+  interpolatedRisks?: Map<string, number>;
 }
 
-export default function EventGroup({ severity, events, selected, expanded, onSelect, onExpand }: EventGroupProps) {
+export default function EventGroup({ severity, events, selected, expanded, onSelect, onExpand, interpolatedRisks }: EventGroupProps) {
   if (events.length === 0) return null;
   const color = severityColor(severity);
 
@@ -32,6 +33,7 @@ export default function EventGroup({ severity, events, selected, expanded, onSel
           expanded={expanded === ev.id}
           onSelect={onSelect}
           onExpand={onExpand}
+          interpolatedRisks={interpolatedRisks}
         />
       ))}
     </div>

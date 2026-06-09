@@ -28,3 +28,10 @@ docs/Apresentação*.pdf
 docs/GlobalSolution*.pdf
 docs/GS_2026.1*.pdf
 docs/GS_2026_2TSC_template.pptx
+
+# AEGIS pipeline outputs
+.aegis_cache/
+src/data/liveData.ts
+src/data/modelMeta.json
+.env
+*.pkl

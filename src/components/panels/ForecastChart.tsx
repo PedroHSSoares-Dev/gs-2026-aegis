@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import PanelHead from '../ui/PanelHead';
 
-const W = 360, H = 130;
+const W = 360, H = 110;
 
 // Pre-generated deterministic forecast data
 const FORECAST_PTS = (() => {
@@ -21,11 +21,12 @@ const FORECAST_PTS = (() => {
 
 export default function ForecastChart() {
   const pts = FORECAST_PTS;
-  const max = 100, min = 30;
+  const max = 100, min = 0;
+  const PAD_T = 16, PAD_B = 18, PAD_L = 20, PAD_R = 8;
 
   const toXY = (v: number, i: number): [number, number] => [
-    (i / (pts.length - 1)) * (W - 24) + 16,
-    H - ((v - min) / (max - min)) * (H - 28) - 14,
+    (i / (pts.length - 1)) * (W - PAD_L - PAD_R) + PAD_L,
+    PAD_T + (1 - (v - min) / (max - min)) * (H - PAD_T - PAD_B),
   ];
 
   const { obsPath, fcPath, bandPath, nowX } = useMemo(() => {
@@ -42,22 +43,22 @@ export default function ForecastChart() {
 
   return (
     <div className="panel panel-trend">
-      <PanelHead title="48H FORECAST" sub="ML model · ENSEMBLE-04" />
+      <PanelHead title="48H FORECAST" sub="ML model · M2c Seasonality" />
       <div className="forecast">
-        <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H}>
+        <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ flex: 1, minHeight: 0, display: 'block' }}>
           {[0, 0.25, 0.5, 0.75, 1].map(t => (
-            <line key={t} x1={16} y1={14 + t * (H - 28)} x2={W - 8} y2={14 + t * (H - 28)} stroke="rgba(240,244,255,0.05)" />
+            <line key={t} x1={PAD_L} y1={PAD_T + t * (H - PAD_T - PAD_B)} x2={W - PAD_R} y2={PAD_T + t * (H - PAD_T - PAD_B)} stroke="rgba(240,244,255,0.05)" />
           ))}
-          {[100, 75, 50, 25].map((y, i) => (
-            <text key={y} x={6} y={14 + (i / 3) * (H - 28) + 3} fontFamily="JetBrains Mono,monospace" fontSize="7" fill="rgba(240,244,255,0.3)">{y}</text>
+          {[100, 75, 50, 25, 0].map((y, i) => (
+            <text key={y} x={PAD_L - 2} y={PAD_T + (i / 4) * (H - PAD_T - PAD_B) + 3} fontFamily="JetBrains Mono,monospace" fontSize="7" fill="rgba(240,244,255,0.3)" textAnchor="end">{y}</text>
           ))}
           <path d={bandPath} fill="rgba(0,212,255,0.1)" />
           <path d={obsPath} fill="none" stroke="#00D4FF" strokeWidth="1.5" />
           <path d={fcPath} fill="none" stroke="#00D4FF" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.7" />
-          <line x1={nowX} y1={14} x2={nowX} y2={H - 14} stroke="rgba(255,255,255,0.2)" strokeDasharray="2 3" />
-          <text x={nowX + 4} y={22} fontFamily="JetBrains Mono,monospace" fontSize="7" fill="rgba(255,255,255,0.4)">NOW</text>
+          <line x1={nowX} y1={PAD_T} x2={nowX} y2={H - PAD_B} stroke="rgba(255,255,255,0.2)" strokeDasharray="2 3" />
+          <text x={nowX + 4} y={PAD_T + 6} fontFamily="JetBrains Mono,monospace" fontSize="7" fill="rgba(255,255,255,0.4)">NOW</text>
           {['-24h', '-12h', '0', '+12h', '+24h'].map((l, i) => (
-            <text key={l} x={16 + (i / 4) * (W - 24)} y={H - 2} fontFamily="JetBrains Mono,monospace" fontSize="7" fill="rgba(240,244,255,0.3)" textAnchor="middle">{l}</text>
+            <text key={l} x={PAD_L + (i / 4) * (W - PAD_L - PAD_R)} y={H - 4} fontFamily="JetBrains Mono,monospace" fontSize="7" fill="rgba(240,244,255,0.3)" textAnchor="middle">{l}</text>
           ))}
         </svg>
         <div className="forecast-legend">

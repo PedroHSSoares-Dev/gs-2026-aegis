@@ -16,9 +16,10 @@ export interface DisasterEvent {
   detected:         string;
   area:             string;
   spark:            number[];
-  radius:           number;
-  path?:            [number, number][];
-  detectedDaysAgo:  number;
+  radius:               number;
+  path?:                [number, number][];
+  detectedDaysAgo:      number;
+  firstDetectedDaysAgo?: number; // storm birth time (max dA across all snapshots); used by pathProgress
 }
 
 export interface Metrics {

@@ -1,18 +1,9 @@
 import { useRef, useEffect } from 'react';
 import type { TimelineMarker } from '../../types';
 import { RewindIcon, PlayIcon, PauseIcon, ForwardIcon } from '../icons';
+import { formatTimelineDate } from '../../lib/timeUtils';
 
-// Timeline spans D-7 to D+7 (14 days total, scrub=0.5 = NOW)
-// scrub=0   → 7 days in the future  (D+7)
-// scrub=0.5 → NOW                   (D+0)
-// scrub=1   → 7 days in the past    (D-7)
-const DAYS_HALF = 7;
-const TOTAL_DAYS = DAYS_HALF * 2; // 14
-
-export function scrubToDaysOffset(value: number): number {
-  // Returns days relative to NOW: positive = past, negative = future
-  return (value - 0.5) * TOTAL_DAYS; // 0→-7, 0.5→0, 1→+7
-}
+export { scrubToDaysOffset } from '../../lib/timeUtils';
 
 interface TimelineProps {
   value: number;
@@ -21,13 +12,6 @@ interface TimelineProps {
   onPlayToggle: () => void;
   markers: TimelineMarker[];
   now: Date;
-}
-
-function formatTimelineDate(now: Date, value: number): string {
-  const offsetDays = scrubToDaysOffset(value);
-  const t = new Date(now.getTime() - offsetDays * 24 * 3600 * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())} ${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}Z`;
 }
 
 const DENSITY_PATH = (() => {
@@ -41,16 +25,15 @@ const DENSITY_PATH = (() => {
   return 'M0,100 ' + pts.map(p => `L${p[0]},${p[1]}`).join(' ') + ' L100,100 Z';
 })();
 
-// Axis labels: D+7 on left → D-7 on right, NOW in center
-// 7 labels with uniform 1/6 spacing avoids overlap near NOW
+// Axis labels: D-7 on left (past) → NOW center → D+7 on right (future)
 const AXIS_LABELS = [
-  { label: 'D+7', pos: 0 },
-  { label: 'D+5', pos: 1/6 },
-  { label: 'D+3', pos: 2/6 },
+  { label: 'D-7', pos: 0 },
+  { label: 'D-5', pos: 1/6 },
+  { label: 'D-3', pos: 2/6 },
   { label: 'NOW', pos: 0.5, isNow: true },
-  { label: 'D-3', pos: 4/6 },
-  { label: 'D-5', pos: 5/6 },
-  { label: 'D-7', pos: 1 },
+  { label: 'D+3', pos: 4/6 },
+  { label: 'D+5', pos: 5/6 },
+  { label: 'D+7', pos: 1 },
 ];
 
 export default function Timeline({ value, onChange, playing, onPlayToggle, markers, now }: TimelineProps) {

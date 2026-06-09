@@ -5,8 +5,8 @@ const SENSORS: [string, number, string, string][] = [
   ['LANDSAT-9',   99.4, 'PASS @ 15:12', '#00D4FF'],
   ['GOES-18',     100,  'GEOSTATIONARY', '#5EE0C2'],
   ['MODIS-Aqua',  98.9, 'PASS @ 14:51', '#00D4FF'],
-  ['ICEYE-X38',   97.2, 'PASS @ 14:44', '#FFB547'],
-  ['CAPELLA-7',   99.0, 'PASS @ 15:02', '#00D4FF'],
+  ['TERRA',       97.8, 'PASS @ 13:44', '#00D4FF'],
+  ['AQUA',        99.1, 'PASS @ 15:02', '#00D4FF'],
 ];
 
 export default function SensorNetwork() {

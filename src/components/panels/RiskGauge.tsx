@@ -1,13 +1,7 @@
+import { zoneLabel } from '../../lib/riskUtils';
+
 interface RiskGaugeProps {
   value: number; // 0–100
-}
-
-// Zone label based on value — no numbers shown
-function zoneLabel(v: number): { label: string; color: string } {
-  if (v >= 75) return { label: 'CRITICAL', color: '#FF6B35' };
-  if (v >= 55) return { label: 'HIGH',     color: '#FFB547' };
-  if (v >= 35) return { label: 'MEDIUM',   color: '#00D4FF' };
-  return               { label: 'LOW',     color: '#5EE0C2' };
 }
 
 export default function RiskGauge({ value }: RiskGaugeProps) {
